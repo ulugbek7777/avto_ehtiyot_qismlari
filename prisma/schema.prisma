@@ -1,0 +1,224 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       Int      @id @default(autoincrement())
+  email    String   @unique
+  name     String?
+  password String   @default("123456")
+  active   Boolean?
+
+  // Self-referencing relationship
+  manager      User?  @relation("UserManager", fields: [managerId], references: [id])
+  managerId    Int?
+  subordinates User[] @relation("UserManager")
+
+  // Many-to-many relationship with Permission
+  permissions Permission[] @relation("UserPermissions")
+
+  // Many-to-many relationship with Warehouse
+  warehouses Warehouse[] @relation("UserWarehouses")
+
+  // Relation to track accepted product entries
+  acceptedEntries ProductEntry[] @relation("UserAcceptedEntries")
+
+  @@map("users")
+}
+
+model Permission {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+
+  // Many-to-many relationship with User
+  users User[] @relation("UserPermissions")
+
+  @@map("permissions")
+}
+
+model Warehouse {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  // Many-to-many relationship with User
+  users User[] @relation("UserWarehouses")
+
+  // One-to-many relationships
+  products Product[]      @relation("WarehouseProducts")
+  sales    ProductSale[]  @relation("WarehouseSales")
+  entries  ProductEntry[] @relation("WarehouseEntries")
+
+  // One-to-many relationship with ClientOrder
+  clientOrders ClientOrder[] @relation("WarehouseClientOrders")
+
+  @@map("warehouses")
+}
+
+model Item {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  // Many-to-many relationship via ItemModelBrandRelation
+  itemModelBrandRelations ItemModelBrandRelation[] @relation("ItemModelBrandRelations_Item")
+
+  @@map("items")
+}
+
+model Brand {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  // Many-to-many relationship via ItemModelBrandRelation
+  itemModelBrandRelations ItemModelBrandRelation[] @relation("ItemModelBrandRelations_Brand")
+
+  @@map("brands")
+}
+
+model Model {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  // Many-to-many relationship via ItemModelBrandRelation
+  itemModelBrandRelations ItemModelBrandRelation[] @relation("ItemModelBrandRelations_Model")
+
+  @@map("models")
+}
+
+model ItemModelBrandRelation {
+  id Int @id @default(autoincrement())
+
+  // Relations to Item, Model, and Brand
+  item    Item  @relation("ItemModelBrandRelations_Item", fields: [itemId], references: [id])
+  itemId  Int
+  brand   Brand @relation("ItemModelBrandRelations_Brand", fields: [brandId], references: [id])
+  brandId Int
+  model   Model @relation("ItemModelBrandRelations_Model", fields: [modelId], references: [id])
+  modelId Int
+
+  x Int?
+  y Int?
+  z Int?
+
+  // Attributes such as price
+  price          Float // Retail price
+  wholesalePrice Float // Wholesale price (ulgurji narx)
+  // purchasePrice  Float // Purchase price (sotib olingan narx)
+  createdAt      DateTime @default(now())
+
+  // Relation with Product
+  products Product[] @relation("ItemModelBrandProductRelation")
+
+  @@map("item_model_brand_relation")
+}
+
+model Product {
+  id Int @id @default(autoincrement())
+
+  // Relation to ItemModelBrandRelation
+  itemModelBrandRelation   ItemModelBrandRelation @relation("ItemModelBrandProductRelation", fields: [itemModelBrandRelationId], references: [id])
+  itemModelBrandRelationId Int
+
+  quantity    Int // Quantity (soni)
+  warehouse   Warehouse @relation("WarehouseProducts", fields: [warehouseId], references: [id])
+  warehouseId Int
+  createdAt   DateTime  @default(now()) // Date the product was first added
+
+  // Relationships
+  sales   ProductSale[]  @relation("ProductSales")
+  entries ProductEntry[] @relation("ProductEntries")
+
+  @@map("products")
+}
+
+model ClientOrder {
+  id          Int       @id @default(autoincrement())
+  client      Client    @relation("ClientToClientOrders", fields: [clientId], references: [id])
+  clientId    Int
+  warehouseId Int
+  warehouse   Warehouse @relation("WarehouseClientOrders", fields: [warehouseId], references: [id])
+  orderDate   DateTime  @default(now())
+  totalAmount Float
+  amountPaid  Float
+  balance     Float
+  status      String    @default("open")
+  type        String
+  payday      DateTime?
+  confirmed   Boolean
+
+  // One-to-many relationship with ProductSale
+  productSales ProductSale[] @relation("ClientOrderProductSales")
+
+  // Relationships for tracking payments
+  payments ClientPayment[] @relation("ClientOrderPayments")
+
+  @@map("client_orders")
+}
+
+model ProductSale {
+  id          Int       @id @default(autoincrement())
+  product     Product   @relation("ProductSales", fields: [productId], references: [id])
+  productId   Int
+  warehouse   Warehouse @relation("WarehouseSales", fields: [warehouseId], references: [id])
+  warehouseId Int
+  saleDate    DateTime  @default(now())
+  quantity    Int
+  type        String
+  totalAmount Float
+
+  // Many-to-one relationship with ClientOrder
+  clientOrderId Int? // Foreign key to ClientOrder
+  clientOrder   ClientOrder? @relation("ClientOrderProductSales", fields: [clientOrderId], references: [id])
+
+  status String @default("client") //market
+
+  @@map("product_sales")
+}
+
+model ClientPayment {
+  id            Int         @id @default(autoincrement())
+  clientOrder   ClientOrder @relation("ClientOrderPayments", fields: [clientOrderId], references: [id])
+  clientOrderId Int
+  paymentDate   DateTime    @default(now()) // Date of payment
+  amount        Float // Amount paid in this transaction
+  paymentMethod String // Payment method (e.g., cash, card, bank transfer)
+
+  @@map("client_payments")
+}
+
+model Client {
+  id    Int    @id @default(autoincrement())
+  name  String // Client's name
+  phone String // Client's phone number
+
+  // Relation to ClientOrder with matching relation name
+  clientOrders ClientOrder[] @relation("ClientToClientOrders")
+
+  @@map("clients")
+}
+
+model ProductEntry {
+  id            Int       @id @default(autoincrement())
+  product       Product   @relation("ProductEntries", fields: [productId], references: [id])
+  productId     Int
+  warehouse     Warehouse @relation("WarehouseEntries", fields: [warehouseId], references: [id])
+  warehouseId   Int
+  entryDate     DateTime  @default(now()) // Date of product entry into the warehouse
+  quantity      Int // Quantity added
+  saledQuantity Int       @default(0)
+  purchasePrice Float // Purchase price per unit when added
+  status        String    @default("pending") // Status: pending or done
+  salled        Boolean   @default(false)
+  // Fields for acceptance information
+  acceptedBy    User?     @relation("UserAcceptedEntries", fields: [acceptedById], references: [id])
+  acceptedById  Int?
+  acceptedDate  DateTime?
+
+  @@map("product_entries")
+}
